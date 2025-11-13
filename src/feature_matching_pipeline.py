@@ -40,13 +40,25 @@ def collect_image_paths(
     if not image_dir.exists():
         raise FileNotFoundError(f"Image directory not found: {image_dir}")
 
+    def parse_index(path: Path) -> Tuple[int, str]:
+        """Return a sortable key (flag, value) for natural numeric ordering."""
+        stem = path.stem
+        suffix = stem[len(prefix) :]
+        try:
+            numeric_value = int(suffix)
+            return (0, numeric_value)
+        except ValueError:
+            # Non-numeric suffix goes to the end but preserves deterministic ordering.
+            return (1, stem)
+
     candidates = [
         path
-        for path in sorted(image_dir.iterdir())
+        for path in image_dir.iterdir()
         if path.is_file()
         and path.suffix.lower() in extensions
         and path.stem.startswith(prefix)
     ]
+    candidates.sort(key=parse_index)
 
     if len(candidates) < 2:
         raise FileNotFoundError(

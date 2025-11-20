@@ -6,7 +6,8 @@ This repository contains the Week 1 milestone for the Structure-from-Motion proj
 
 - `assets/` — place your captured images named `img_1`, `img_2`, ... (any standard extension).
 - `src/feature_matching_pipeline.py` — reusable Python module & CLI that processes the dataset and writes out match visualizations plus statistics.
-- `notebooks/week1_feature_matching.ipynb` — notebook used to showcase the weekly deliverable, importing the structured code.
+- `notebooks/week1_deliverable.ipynb` — Week 1 notebook for feature matching visualizations.
+- `notebooks/week2_deliverable.ipynb` — Week 2 notebook for two-view reconstruction and PLY export.
 - `outputs/feature_matches/` — auto-created folder containing the `.jpg` match visualizations emitted by the pipeline.
 
 ## Environment setup
@@ -37,7 +38,7 @@ Each run prints per-pair statistics and writes `*_matches.jpg` files to the outp
 
 ## Visualizing results in the notebook
 
-Open `notebooks/week1_feature_matching.ipynb`, run all cells, and the notebook will:
+Open `notebooks/week1_deliverable.ipynb`, run all cells, and the notebook will:
 1. Ensure `src/` is importable.
 2. Invoke the same `run_pipeline` function that powers the CLI.
 3. Preview up to three of the generated visualization images inline via Matplotlib, which you can screenshot for weekly reports.
@@ -46,7 +47,7 @@ If the notebook warns that images are missing, confirm the filenames and rerun t
 
 ## Viewing the reconstructed point cloud
 
-- After running the two-view reconstruction cell in `notebooks/week1_feature_matching.ipynb`, open the generated PLY at `outputs/reconstruction/two_view_points.ply` in a viewer such as MeshLab or CloudCompare.
+- After running the two-view reconstruction cell in `notebooks/week2_deliverable.ipynb`, open the generated PLY at `outputs/reconstruction/two_view_points.ply` in a viewer such as MeshLab or CloudCompare.
 - If the cloud looks sparse or inverted, verify that your photo pair has translation (not just rotation) and try rerunning with a different pair or stricter Lowe ratio.
 
 ## Next steps

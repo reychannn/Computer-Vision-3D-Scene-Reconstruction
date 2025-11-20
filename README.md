@@ -44,6 +44,11 @@ Open `notebooks/week1_feature_matching.ipynb`, run all cells, and the notebook w
 
 If the notebook warns that images are missing, confirm the filenames and rerun the pipeline after adding the dataset.
 
+## Viewing the reconstructed point cloud
+
+- After running the two-view reconstruction cell in `notebooks/week1_feature_matching.ipynb`, open the generated PLY at `outputs/reconstruction/two_view_points.ply` in a viewer such as MeshLab or CloudCompare.
+- If the cloud looks sparse or inverted, verify that your photo pair has translation (not just rotation) and try rerunning with a different pair or stricter Lowe ratio.
+
 ## Next steps
 
 With reliable feature matching established, the next milestone will use these correspondences to estimate the Essential matrix, recover relative pose, and triangulate a sparse 3D point cloud.

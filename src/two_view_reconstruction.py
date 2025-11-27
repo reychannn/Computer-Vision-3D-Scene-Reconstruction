@@ -8,6 +8,7 @@ the resulting sparse point cloud to a PLY file.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 from typing import Iterable, Optional, Sequence, Tuple
 
@@ -161,8 +162,12 @@ def run_two_view_reconstruction(
     detector: str = "SIFT",
     ratio_thresh: float = 0.7,
     output_path: Optional[Path] = None,
+    write_ply: bool = True,
 ) -> ReconstructionResult:
-    """Full two-view reconstruction flow returning a ReconstructionResult."""
+    """Full two-view reconstruction flow returning a ReconstructionResult.
+
+    If write_ply is False, the returned ply_path will be None and no file is written.
+    """
 
     img_a_path, img_b_path = choose_image_pair(asset_dir, preferred_pair)
     image_a = cv2.imread(str(img_a_path))
@@ -213,9 +218,11 @@ def run_two_view_reconstruction(
     pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, image_a.shape[0] - 1)
     colors_rgb = image_a[pixel_coords[:, 1], pixel_coords[:, 0], ::-1]
 
-    if output_path is None:
-        output_path = asset_dir.parent / "outputs" / "reconstruction" / "two_view_points.ply"
-    ply_path = Path(save_ply(output_path, best_points, colors_rgb))
+    ply_path: Optional[Path] = None
+    if write_ply:
+        if output_path is None:
+            output_path = asset_dir.parent / "outputs" / "reconstruction" / "two_view_points.ply"
+        ply_path = Path(save_ply(output_path, best_points, colors_rgb))
 
     pts_a_norm = cv2.undistortPoints(pts_a_in.reshape(-1, 1, 2), K, None).reshape(-1, 2)
     pts_b_norm = cv2.undistortPoints(pts_b_in.reshape(-1, 1, 2), K, None).reshape(-1, 2)
@@ -241,3 +248,68 @@ def run_two_view_reconstruction(
         match_count=len(matches),
         inlier_count=int(inlier_mask.sum()),
     )
+
+
+def find_best_reconstruction(
+    asset_dir: Path,
+    detector: str = "SIFT",
+    ratio_thresh: float = 0.7,
+    output_path: Optional[Path] = None,
+) -> tuple[ReconstructionResult, list[dict]]:
+    """Evaluate all image pairs and return the densest reconstruction.
+
+    Returns (best_result, pair_summaries). Each summary is a dict with keys:
+    pair, status, points, inliers, matches, error (optional).
+    """
+
+    images = collect_image_paths(asset_dir)
+    pair_summaries: list[dict] = []
+    best: ReconstructionResult | None = None
+    best_points = -1
+
+    for img_a, img_b in combinations(images, 2):
+        pair_name = (img_a.name, img_b.name)
+        try:
+            candidate = run_two_view_reconstruction(
+                asset_dir=asset_dir,
+                preferred_pair=pair_name,
+                detector=detector,
+                ratio_thresh=ratio_thresh,
+                output_path=None,
+                write_ply=False,
+            )
+            pts_count = len(candidate.points_3d)
+            pair_summaries.append(
+                {
+                    "pair": pair_name,
+                    "status": "ok",
+                    "points": pts_count,
+                    "inliers": candidate.inlier_count,
+                    "matches": candidate.match_count,
+                    "pose": candidate.pose_label,
+                }
+            )
+            if pts_count > best_points:
+                best_points = pts_count
+                best = candidate
+        except Exception as exc:  # noqa: BLE001
+            pair_summaries.append(
+                {
+                    "pair": pair_name,
+                    "status": "error",
+                    "points": 0,
+                    "inliers": 0,
+                    "matches": 0,
+                    "pose": None,
+                    "error": str(exc),
+                }
+            )
+
+    if best is None:
+        raise RuntimeError("No valid reconstruction found across image pairs.")
+
+    # Write the best PLY (and return a copy with ply_path set).
+    ply_out = output_path or asset_dir.parent / "outputs" / "reconstruction" / "two_view_points.ply"
+    _ = save_ply(ply_out, best.points_3d, best.colors_rgb)
+    best_with_path = ReconstructionResult(**{**best.__dict__, "ply_path": Path(ply_out)})
+    return best_with_path, pair_summaries

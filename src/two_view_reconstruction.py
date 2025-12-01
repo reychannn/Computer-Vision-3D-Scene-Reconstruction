@@ -214,8 +214,10 @@ def run_two_view_reconstruction(
     best_points = best_cloud[best_valid]
 
     pixel_coords = np.round(pts_a_in[best_valid]).astype(int)
+    # not go out of bounds
     pixel_coords[:, 0] = np.clip(pixel_coords[:, 0], 0, image_a.shape[1] - 1)
     pixel_coords[:, 1] = np.clip(pixel_coords[:, 1], 0, image_a.shape[0] - 1)
+    # ::-1 flips the channel order from OpenCV’s BGR to RGB.
     colors_rgb = image_a[pixel_coords[:, 1], pixel_coords[:, 0], ::-1]
 
     ply_path: Optional[Path] = None

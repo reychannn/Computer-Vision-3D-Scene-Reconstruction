@@ -215,6 +215,75 @@ def _pose_from_pnp(
     return R, t, inliers
 
 
+def _projection_matrix(cam: CameraPose, K: np.ndarray) -> np.ndarray:
+    """Build a 3x4 projection matrix for a camera pose."""
+
+    return K @ np.hstack([cam.R, cam.t])
+
+
+def _retriangulate_points(
+    point_cloud: List[np.ndarray],
+    point_lookup: Dict[Tuple[int, int], int],
+    cams: List[CameraPose],
+    features: List[FeatureSet],
+    K: np.ndarray,
+) -> Tuple[List[np.ndarray], int]:
+    """Refine 3D points with multi-view linear triangulation across all observations.
+
+    Points keep their original indexing; only coordinates are updated for points
+    with at least two registered-view observations and positive depth in all
+    contributing cameras.
+    """
+
+    new_points = list(point_cloud)
+    improved = 0
+
+    # Build observation lists per point id.
+    observations: Dict[int, List[Tuple[int, int]]] = {}
+    for (img_idx, kp_idx), pid in point_lookup.items():
+        observations.setdefault(pid, []).append((img_idx, kp_idx))
+
+    for pid, obs in observations.items():
+        if len(obs) < 2:
+            continue
+        A_rows = []
+        proj_mats = []
+        for img_idx, kp_idx in obs:
+            if img_idx >= len(cams):
+                continue
+            cam = cams[img_idx]
+            if not cam.registered:
+                continue
+            P = _projection_matrix(cam, K)
+            proj_mats.append(P)
+            pt = features[img_idx].keypoints[kp_idx].pt
+            pt_norm = cv2.undistortPoints(
+                np.array(pt, dtype=np.float64).reshape(1, 1, 2), K, None
+            )[0, 0]
+            x, y = pt_norm
+            A_rows.append(x * P[2] - P[0])
+            A_rows.append(y * P[2] - P[1])
+
+        if len(proj_mats) < 2:
+            continue
+
+        A = np.asarray(A_rows, dtype=np.float64)
+        _, _, Vt = np.linalg.svd(A)
+        X_h = Vt[-1]
+        if abs(X_h[3]) < 1e-9:
+            continue
+        X = X_h[:3] / X_h[3]
+
+        depths = [(P @ X_h)[2] for P in proj_mats]
+        if min(depths) <= 0:
+            continue
+
+        new_points[pid] = X
+        improved += 1
+
+    return new_points, improved
+
+
 def _register_initial_pair(
     idx_a: int,
     idx_b: int,
@@ -432,6 +501,12 @@ def run_incremental_sfm(
             R_refined, _ = cv2.Rodrigues(rvec_ref)
             cam.R, cam.t = R_refined, tvec_ref
 
+        # Re-triangulate all points using all available observations.
+        point_cloud, improved = _retriangulate_points(point_cloud, point_lookup, cams, features, K)
+        stats_improved = improved
+    else:
+        stats_improved = 0
+
     points_arr = np.asarray(point_cloud, dtype=np.float64)
     colors_arr = np.asarray(colors, dtype=np.float64) if len(colors) > 0 else None
 
@@ -446,6 +521,7 @@ def run_incremental_sfm(
         "skipped": skipped,
         "points": len(points_arr),
         "pose_inliers": pose_inliers,
+        "retriangulated": stats_improved,
     }
 
     return IncrementalResult(

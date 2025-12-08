@@ -60,6 +60,10 @@ class IncrementalResult:
     colors_rgb: np.ndarray
     ply_path: Optional[Path]
     stats: dict
+    point_lookup: Dict[Tuple[int, int], int]  # ADD THIS LINE
+    image_paths: Optional[List[Path]] = None
+    tracks: Optional[Dict[int, List[Tuple[int, np.ndarray]]]] = None
+    keypoints_px: Optional[List[np.ndarray]] = None
 
 
 def _triangulate_pair(
@@ -355,6 +359,7 @@ def run_incremental_sfm(
     output_path: Optional[Path] = None,
     refine: bool = True,
     min_correspondences: int = 12,
+    return_tracks: bool = False,
 ) -> IncrementalResult:
     """Incrementally register all images in `asset_dir` and return a point cloud."""
 
@@ -524,6 +529,21 @@ def run_incremental_sfm(
         "retriangulated": stats_improved,
     }
 
+    keypoints_px = None
+    tracks = None
+    point_lookup_out = dict(point_lookup)
+    if return_tracks:
+        keypoints_px = [
+            np.array([kp.pt for kp in feats.keypoints], dtype=np.float32)
+            if len(feats.keypoints) > 0
+            else np.empty((0, 2), dtype=np.float32)
+            for feats in features
+        ]
+        tracks = {}
+        for (img_idx, kp_idx), pid in point_lookup.items():
+            pt = keypoints_px[img_idx][kp_idx]
+            tracks.setdefault(pid, []).append((img_idx, pt))
+
     return IncrementalResult(
         K=K,
         poses=cams,
@@ -531,6 +551,10 @@ def run_incremental_sfm(
         colors_rgb=colors_arr if colors_arr is not None else np.empty((0, 3)),
         ply_path=ply_path,
         stats=stats,
+        image_paths=image_paths,
+        tracks=tracks,
+        point_lookup=point_lookup_out,
+        keypoints_px=keypoints_px,
     )
 
 

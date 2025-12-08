@@ -233,6 +233,40 @@ Open in MeshLab/CloudCompare to inspect the full reconstruction.
 
 ---
 
+## Virtual Tour Viewer
+
+Turn the refined camera poses and sparse point cloud into an interactive tour:
+- Builds a view graph where cameras connect when they share many 3D points.
+- Left-click in the current image to jump to the best neighboring camera observing that region.
+- Animates the move with lerped translation, slerped rotation, image cross-fade, and projected sparse points.
+
+### Run it
+
+```bash
+python src/virtual_tour.py \
+  --image-dir assets \
+  --detector SIFT \
+  --ratio 0.75 \
+  --min-shared 15 \
+  --fps 30 \
+  --transition-sec 1.0
+```
+
+Controls: left-click to navigate; `q`/`Esc` to quit. Use `--max-points` to limit rendered points for speed and `--no-refine` to disable the lightweight bundle adjustment if you need faster start-up.
+
+### Web / Three.js viewer (optional)
+
+- Notebook: `notebooks/week4_virtual_tour.ipynb` runs SfM, exports `virtual_tour_data.json`, and writes `virtual_tour_viewer.html` (both in `outputs/reconstruction/`).
+- Serve locally to view:  
+  ```bash
+  cd outputs/reconstruction
+  python -m http.server 8000
+  # open http://localhost:8000/virtual_tour_viewer.html
+  ```
+  Drag to orbit, scroll to zoom; cameras are white spheres and the sparse point cloud is colored.
+
+---
+
 ## Implementation Notes
 
 ### Core Modules

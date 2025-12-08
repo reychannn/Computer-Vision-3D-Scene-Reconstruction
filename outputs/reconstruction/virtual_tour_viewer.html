@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <title>Virtual Tour Viewer</title>
+  <style>
+    body, html { margin: 0; padding: 0; overflow: hidden; background: #0a0a0f; }
+    #info { position: absolute; top: 12px; left: 12px; color: #f0f0f0; font-family: monospace; z-index: 1; }
+  </style>
+  <link rel="icon" href="data:,">
+  <script type="importmap">{
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }</script>
+</head>
+<body>
+  <div id='info'>Drag: orbit, Scroll: zoom</div>
+  <canvas id='c'></canvas>
+  <script type='module'>
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+    const canvas = document.getElementById('c');
+    const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0f);
+    const camera = new THREE.PerspectiveCamera(60, 2, 0.1, 5000);
+    const controls = new OrbitControls(camera, renderer.domElement);
+
+    fetch('virtual_tour_data.json').then(r => r.json()).then(data => {
+      const pts = data.points;
+      const positions = new Float32Array(pts.length * 3);
+      const colors = new Float32Array(pts.length * 3);
+      let i = 0;
+      for (const p of pts) {
+        positions[3*i] = p.xyz[0];
+        positions[3*i+1] = p.xyz[1];
+        positions[3*i+2] = p.xyz[2];
+        colors[3*i] = p.rgb[0] / 255;
+        colors[3*i+1] = p.rgb[1] / 255;
+        colors[3*i+2] = p.rgb[2] / 255;
+        i++;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.PointsMaterial({size: 2.2, vertexColors: true, sizeAttenuation: true});
+      scene.add(new THREE.Points(geom, mat));
+
+      const camGeom = new THREE.SphereGeometry(4, 10, 10);
+      const camMat = new THREE.MeshBasicMaterial({color: 0xffffff});
+      for (const c of data.cameras) {
+        const m = new THREE.Mesh(camGeom, camMat);
+        m.position.set(c.center[0], c.center[1], c.center[2]);
+        scene.add(m);
+      }
+
+      geom.computeBoundingBox();
+      const bb = geom.boundingBox;
+      const center = new THREE.Vector3();
+      bb.getCenter(center);
+      const size = new THREE.Vector3();
+      bb.getSize(size);
+      const radius = Math.max(size.x, size.y, size.z) * 0.7;
+      camera.position.set(center.x, center.y, center.z + radius * 1.5);
+      controls.target.copy(center);
+      controls.update();
+    });
+
+    function resizeRenderer() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resizeRenderer);
+    resizeRenderer();
+
+    function render() {
+      renderer.render(scene, camera);
+      requestAnimationFrame(render);
+    }
+    render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <title>Final Virtual Tour</title>
+  <style>
+    body, html { margin: 0; padding: 0; overflow: hidden; background: #0a0a0f; }
+    #info { 
+      position: absolute; top: 12px; left: 12px; 
+      color: #f0f0f0; font-family: monospace; z-index: 1; 
+      background: rgba(0,0,0,0.5); padding: 8px; border-radius: 4px;
+    }
+  </style>
+  <script type="importmap">{
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }</script>
+</head>
+<body>
+  <div id='info'>
+    <b>Virtual Tour</b><br>
+    Left/Right Arrows: Navigate Cameras<br>
+    Mouse: Orbit / Scroll to Zoom
+  </div>
+  <canvas id='c'></canvas>
+
+  <script type='module'>
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+    import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
+
+    // 1. Setup Scene
+    const canvas = document.getElementById('c');
+    const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0f);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
+    camera.position.set(0, 5, 10);
+    
+    const controls = new OrbitControls(camera, renderer.domElement);
+
+    // 2. Load the Dense Point Cloud (merged_scene.ply)
+    const loader = new PLYLoader();
+    loader.load('merged_scene.ply', function (geometry) {
+        // Create material for points
+        const material = new THREE.PointsMaterial({ 
+            size: 0.1, // Adjust this if points are too big/small
+            vertexColors: true 
+        });
+        const pointCloud = new THREE.Points(geometry, material);
+        scene.add(pointCloud);
+        
+        // Center view on the cloud
+        geometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        geometry.boundingBox.getCenter(center);
+        controls.target.copy(center);
+        camera.position.copy(center).add(new THREE.Vector3(0, 2, 5));
+        controls.update();
+        
+        console.log("Point cloud loaded!");
+    }, undefined, function (error) {
+        console.error("Error loading PLY:", error);
+        alert("Could not load merged_scene.ply. Make sure it is in the same folder!");
+    });
+
+    // 3. Load Cameras (merged_cameras.json)
+    let cameraPath = [];
+    let currentCamIndex = 0;
+    const cameraHelperGroup = new THREE.Group();
+    scene.add(cameraHelperGroup);
+
+    // Visual marker for the "Active" camera
+    const activeMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.3, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0x00ff00 }) // Green = Active
+    );
+    scene.add(activeMarker);
+
+    fetch('merged_cameras.json')
+      .then(r => r.json())
+      .then(data => {
+        const cameras = data.cameras;
+        // Sort by index to ensure correct path order
+        cameras.sort((a, b) => a.index - b.index);
+
+        cameras.forEach(cam => {
+            // Draw white sphere for each camera position
+            const geom = new THREE.SphereGeometry(0.1, 8, 8);
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const mesh = new THREE.Mesh(geom, mat);
+            
+            // Note: Your JSON stores 't' which is NOT the center. 
+            // We calculated 'center' in the python script. Use that!
+            if (cam.center) {
+                mesh.position.set(cam.center[0], cam.center[1], cam.center[2]);
+                
+                // Store for navigation
+                cameraPath.push({
+                    pos: new THREE.Vector3(...cam.center),
+                    rot: cam.R // You might need to convert this to Quaternion for smooth interpolation
+                });
+                
+                cameraHelperGroup.add(mesh);
+            }
+        });
+        
+        if(cameraPath.length > 0) {
+            updateActiveCamera(0);
+        }
+        console.log(`Loaded ${cameraPath.length} cameras.`);
+      })
+      .catch(err => console.error("Error loading cameras:", err));
+
+    // 4. Navigation Logic
+   function updateActiveCamera(index) {
+        if (index < 0 || index >= cameraPath.length) return;
+        currentCamIndex = index;
+        
+        const target = cameraPath[index];
+        activeMarker.position.copy(target.pos);
+        
+        // 1. Move Camera
+        camera.position.copy(target.pos);
+        
+        // 2. Rotate Camera (The "Cinematic" Fix)
+        // We calculate where the camera was looking based on its Rotation Matrix (R)
+        // R is a 3x3 matrix (array of arrays). The 3rd row represents the "forward" direction in OpenCV.
+        const R = target.rot; 
+        
+        // Create a direction vector from the 3rd row of R
+        // Note: We flip the signs because Three.js looks down -Z, while SfM usually looks down +Z
+        const forward = new THREE.Vector3( -R[2][0], -R[2][1], -R[2][2] );
+        
+        // Tell OrbitControls to look at a point in front of the camera
+        const lookTarget = new THREE.Vector3().copy(target.pos).add(forward);
+        controls.target.copy(lookTarget);
+        
+        controls.update();
+        console.log("Moved to camera " + index);
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight') updateActiveCamera((currentCamIndex + 1) % cameraPath.length);
+        if (e.key === 'ArrowLeft') updateActiveCamera((currentCamIndex - 1 + cameraPath.length) % cameraPath.length);
+    });
+
+    // 5. Render Loop
+    function resizeRenderer() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resizeRenderer);
+
+    function render() {
+      renderer.render(scene, camera);
+      requestAnimationFrame(render);
+    }
+    render();
+  </script>
+</body>
+</html>

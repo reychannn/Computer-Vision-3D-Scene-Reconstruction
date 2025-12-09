@@ -60,7 +60,7 @@ class VirtualTourViewer:
         )
         
         # Animation parameters
-        self.transition_duration = 2.0  # seconds
+        self.transition_duration = 0.5  # seconds
         self.fps = 30
         self.frame_interval = 1000 // self.fps  # milliseconds
         
